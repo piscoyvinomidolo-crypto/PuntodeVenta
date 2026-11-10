@@ -105,7 +105,15 @@ tr.anu td{opacity:.5}tr.anu td.n b,tr.anu td.n{text-decoration:line-through}tr.a
 const $=s=>document.querySelector(s);
 const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const M=n=>'S/ '+Number(n||0).toFixed(2);
-let URL_='';try{URL_=localStorage.getItem('pv_url')||''}catch(e){}
+
+/* ================================================================
+   👇👇  AQUÍ VA LA URL DE TU APPS SCRIPT (la que termina en /exec)  👇👇
+   Reemplaza solo lo que está entre las comillas.
+   ================================================================ */
+const URL_FIJA='https://script.google.com/macros/s/AKfycbxWG9wD_4Un7xwtp0VbtGv-aq1gAqbUJLY203V9iR72J3TdXdJmThw5Gw4ZxSCgIksunw/exec';
+/* ================================================================ */
+
+let URL_=URL_FIJA;try{URL_=localStorage.getItem('pv_url')||URL_FIJA}catch(e){}
 const S={cart:[],pay:'Efectivo',vid:null};
 
 async function api(action,x={}){
@@ -139,7 +147,7 @@ function vLogin(){
   <button style="width:100%;margin-top:1.2rem">Entrar</button>
   ${URL_?'<button type="button" class="lk" onclick="cambiarUrl()">Cambiar conexión</button>':''}</form></div></div>`;
 }
-function cambiarUrl(){URL_='https://script.google.com/macros/s/AKfycbxWG9wD_4Un7xwtp0VbtGv-aq1gAqbUJLY203V9iR72J3TdXdJmThw5Gw4ZxSCgIksunw/exec';try{localStorage.removeItem('pv_url')}catch(e){}vLogin()}
+function cambiarUrl(){URL_='';try{localStorage.removeItem('pv_url')}catch(e){}vLogin()}
 function login(){run(async()=>{
   const u=$('#lu').value.trim();if(!u)throw new Error('Pega la URL del servidor Apps Script');URL_=u;
   S.u=$('#us').value.trim();S.pin=$('#pn').value.trim();
@@ -416,16 +424,54 @@ function vAj(){
   return `<h2>Ajustes</h2><div class="cols"><div class="panel"><h3>Negocio</h3><label for="n1">Nombre que ven los vendedores</label><input id="n1" value="${esc(S.d.negocio)}"><div class="acts"><button onclick="guardarNeg()">Guardar nombre</button></div>
   <h3 style="margin-top:1.4rem">PIN del administrador</h3><label for="n2">Nuevo PIN (4 a 6 números)</label><input id="n2" type="password" inputmode="numeric" maxlength="6"><div class="acts"><button onclick="cambiarPin()">Cambiar PIN</button></div></div>
   <div class="panel"><h3>QR de Yape</h3>${S.d.qr?`<div class="qr"><img src="${S.d.qr}" alt="QR de Yape"></div>`:'<p class="empty">Aún no hay QR registrado.</p>'}<label for="n3">Subir imagen del QR</label><input id="n3" type="file" accept="image/*" onchange="guardarQR()">
-  <h3 style="margin-top:1.4rem">Excel</h3><p class="mut">Descarga una copia de seguridad en Excel directamente desde Google Sheets.</p><button onclick="excel()">Descargar Excel</button></div></div>`;
+  <h3 style="margin-top:1.4rem">Respaldo en Excel</h3><p class="mut">Descarga TODO (productos con fotos, ventas con capturas, clientes, vendedores, ajustes). Si actualizas o se borra el aplicativo, vuelve a subir ese Excel y se restaura todo.</p><div class="acts" style="justify-content:flex-start"><button onclick="respaldo()">⬇️ Exportar todo a Excel</button><button class="ghost" onclick="restaurarM()">⬆️ Restaurar desde Excel</button></div></div></div>`;
 }
 function guardarNeg(){run(async()=>{await api('guardarNegocio',{negocio:$('#n1').value});toast('Guardado');await refrescar()})}
 function cambiarPin(){run(async()=>{const n=$('#n2').value.trim();if(!n)throw new Error('Ingresa un PIN válido');await api('cambiarPin',{nuevo:n});S.pin=n;toast('PIN actualizado');$('#n2').value=''})}
 function guardarQR(){run(async()=>{const f=$('#n3').files[0];if(!f)return;await api('guardarQR',{qr:await img(f,420,.8)});toast('QR guardado');await refrescar()})}
-function excel(){
-  const d=S.d,wb=XLSX.utils.book_new(),add=(n,r)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(r),n);
-  add('Productos',d.productos.map(({foto,...r})=>r));add('Clientes',d.clientes);add('Proveedores',d.proveedores||[]);add('Entradas_Proveedores',d.entradas||[]);add('Vendedores',d.vendedores);add('Ventas',d.ventas.map(v=>({...v,items:resumenItems(v),captura:v.captura?'Sí':''})));add('Abonos',d.abonos);
-  XLSX.writeFile(wb,'ventas_'+hoy()+'.xlsx');
+
+/* ---------- Respaldo / Restauración completa en Excel ---------- */
+const HOJAS_R=['Productos','Clientes','Proveedores','Entradas_Proveedores','Ventas','Abonos','Config','Vendedores'];/* Vendedores va al final */
+function respaldo(){run(async()=>{
+  if(!window.XLSX)throw new Error('No cargó el generador de Excel. Revisa tu internet.');
+  const j=await api('respaldo'),wb=XLSX.utils.book_new(),IMG=[],CH=30000;
+  HOJAS_R.forEach(n=>{
+    const rows=(j.hojas[n]||[]).map((r,i)=>{const o={...r};
+      Object.keys(o).forEach(c=>{const v=o[c];if(typeof v==='string'&&v.length>CH){/* Excel limita cada celda: las imágenes largas se parten en la hoja Imagenes */
+        for(let p=0,k=0;p<v.length;p+=CH,k++)IMG.push({hoja:n,fila:i,campo:c,parte:k,datos:v.slice(p,p+CH)});o[c]=''}});
+      return o});
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),n);
+  });
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(IMG.length?IMG:[{hoja:'',fila:'',campo:'',parte:'',datos:''}]),'Imagenes');
+  const d=new Date(),p=x=>String(x).padStart(2,'0');
+  XLSX.writeFile(wb,`respaldo_${hoy()}_${p(d.getHours())}${p(d.getMinutes())}.xlsx`);
+  toast('✅ Respaldo descargado');
+})}
+function restaurarM(){
+  modal(`<h2>Restaurar desde Excel</h2><p>Elige el Excel de respaldo que descargaste con "Exportar todo a Excel".</p>
+  <p class="alert">Se <b>reemplazarán todos los datos actuales</b> por los del archivo. Al terminar deberás ingresar con los usuarios y PIN del respaldo.</p>
+  <label for="imp">Archivo de respaldo (.xlsx)</label><input id="imp" type="file" accept=".xlsx,.xls">
+  <div class="acts"><button class="ghost" onclick="closeM()">Cancelar</button><button class="dng" onclick="restaurar()">Restaurar todo</button></div>`);
 }
+function restaurar(){run(async()=>{
+  const f=$('#imp').files[0];if(!f)throw new Error('Elige el archivo Excel del respaldo');
+  if(!confirm('Esto reemplaza TODOS los datos actuales por los del Excel. ¿Continuar?'))return;
+  const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+  if(!wb.Sheets.Vendedores||!wb.Sheets.Productos)throw new Error('Este archivo no parece un respaldo de esta app');
+  const rd=n=>wb.Sheets[n]?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:''}):null,T={};
+  HOJAS_R.forEach(n=>T[n]=rd(n));
+  if(!T.Vendedores.some(v=>v.rol==='admin'&&act(v.activo)))throw new Error('El respaldo no tiene un administrador activo');
+  const by={};(rd('Imagenes')||[]).forEach(r=>{if(r.hoja===''||r.campo==='')return;const k=r.hoja+'|'+r.fila+'|'+r.campo;(by[k]=by[k]||[]).push(r)});
+  Object.keys(by).forEach(k=>{const[h,fi,c]=k.split('|');if(T[h]&&T[h][+fi])T[h][+fi][c]=by[k].sort((a,b)=>a.parte-b.parte).map(r=>String(r.datos)).join('')});
+  for(const n of HOJAS_R){
+    if(!T[n])continue;toast('Restaurando '+n+'…');
+    let lote=[],sz=0,primero=true;
+    const enviar=async()=>{await api('importar',{hoja:n,filas:lote,limpiar:primero});primero=false;lote=[];sz=0};
+    for(const r of T[n]){const s=JSON.stringify(r).length;if(lote.length&&sz+s>1500000)await enviar();lote.push(r);sz+=s}
+    if(lote.length||primero)await enviar();
+  }
+  closeM();salir();toast('✅ Restauración completa. Ingresa de nuevo.');
+})}
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 vLogin();
