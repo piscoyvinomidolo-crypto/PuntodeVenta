@@ -139,7 +139,7 @@ function vLogin(){
   <button style="width:100%;margin-top:1.2rem">Entrar</button>
   ${URL_?'<button type="button" class="lk" onclick="cambiarUrl()">Cambiar conexión</button>':''}</form></div></div>`;
 }
-function cambiarUrl(){URL_='';try{localStorage.removeItem('pv_url')}catch(e){}vLogin()}
+function cambiarUrl(){URL_='https://script.google.com/macros/s/AKfycbxWG9wD_4Un7xwtp0VbtGv-aq1gAqbUJLY203V9iR72J3TdXdJmThw5Gw4ZxSCgIksunw/exec';try{localStorage.removeItem('pv_url')}catch(e){}vLogin()}
 function login(){run(async()=>{
   const u=$('#lu').value.trim();if(!u)throw new Error('Pega la URL del servidor Apps Script');URL_=u;
   S.u=$('#us').value.trim();S.pin=$('#pn').value.trim();
